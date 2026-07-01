@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Skill Translator</title>
+<style>
+  :root{
+    --ink:#1b1b18; --paper:#fbf9f4; --rule:#d8d2c4;
+    --accent:#1f5c4d; --accent-soft:#e3ede9; --flag:#b5472b;
+  }
+  *{box-sizing:border-box;}
+  body{
+    font-family:'Iowan Old Style','Georgia',serif; color:var(--ink);
+    background:var(--paper); margin:0; padding:32px 20px 60px;
+  }
+  .wrap{max-width:700px;margin:0 auto;}
+  .eyebrow{font-family:'Courier New',monospace;font-size:11px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--accent);margin-bottom:6px;}
+  h1{font-size:28px;line-height:1.15;margin:0 0 8px;font-weight:600;}
+  .sub{font-size:14.5px;color:#5c574c;margin:0 0 28px;max-width:56ch;line-height:1.5;}
+  .field{margin-bottom:20px;}
+  label{display:block;font-family:'Courier New',monospace;font-size:11px;letter-spacing:.08em;
+    text-transform:uppercase;color:#7a7568;margin-bottom:7px;}
+  textarea{width:100%;border:1px solid var(--rule);background:#fff;border-radius:3px;
+    padding:12px 13px;font-family:'Iowan Old Style','Georgia',serif;font-size:14.5px;
+    line-height:1.5;color:var(--ink);resize:vertical;}
+  textarea:focus{outline:2px solid var(--accent);outline-offset:1px;}
+  button{font-family:'Courier New',monospace;font-size:12.5px;letter-spacing:.06em;
+    text-transform:uppercase;background:var(--accent);color:#fff;border:none;
+    padding:12px 20px;border-radius:3px;cursor:pointer;}
+  button:disabled{background:#a9a496;cursor:default;}
+  button:hover:not(:disabled){background:#174a3e;}
+  .err{color:var(--flag);font-size:13px;margin-top:10px;}
+  .results{margin-top:36px;}
+  hr{border:none;border-top:1px solid var(--rule);margin:30px 0;}
+  .result-head{font-family:'Courier New',monospace;font-size:11px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--accent);margin-bottom:14px;}
+  .item{border-left:2px solid var(--accent-soft);padding:4px 0 16px 16px;margin-bottom:4px;}
+  .item .raw{font-size:12.5px;color:#8c8576;font-style:italic;margin-bottom:4px;}
+  .item .line{font-size:15.5px;line-height:1.5;}
+  .skill-tag{display:inline-block;font-family:'Courier New',monospace;font-size:10.5px;
+    letter-spacing:.05em;text-transform:uppercase;color:var(--accent);background:var(--accent-soft);
+    padding:2px 7px;border-radius:2px;margin-bottom:6px;}
+  .copyall{margin-top:18px;background:transparent;color:var(--accent);border:1px solid var(--accent);}
+  .copyall:hover{background:var(--accent-soft);}
+  .loading{font-family:'Courier New',monospace;font-size:12.5px;color:#7a7568;margin-top:14px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">Skill translator</div>
+  <h1>Find the resume language hiding in how you actually talk about your work</h1>
+  <p class="sub">Paste a job description and describe your work history in your own words — informally is fine. This finds the skills the job is looking for and rewrites your experience to surface them.</p>
+
+  <div class="field">
+    <label>Job description</label>
+    <textarea id="jd" rows="6" placeholder="Paste the job posting here..."></textarea>
+  </div>
+  <div class="field">
+    <label>Your work history</label>
+    <textarea id="history" rows="8" placeholder="Describe what you did, however you'd naturally say it. Informal is fine."></textarea>
+  </div>
+
+  <button id="genBtn">Rewrite for this job</button>
+  <div id="loading" class="loading" style="display:none">Reading the posting, matching it against what you wrote…</div>
+  <div id="error" class="err" style="display:none"></div>
+  <div id="results" class="results" style="display:none"></div>
+</div>
+
+<script>
+const genBtn = document.getElementById('genBtn');
+const resultsEl = document.getElementById('results');
+const errorEl = document.getElementById('error');
+const loadingEl = document.getElementById('loading');
+
+genBtn.addEventListener('click', async () => {
+  const jd = document.getElementById('jd').value.trim();
+  const history = document.getElementById('history').value.trim();
+  errorEl.style.display = 'none';
+  resultsEl.style.display = 'none';
+  resultsEl.innerHTML = '';
+
+  if (!jd || !history) {
+    errorEl.textContent = 'Paste both the job description and your work history first.';
+    errorEl.style.display = 'block';
+    return;
+  }
+
+  genBtn.disabled = true;
+  genBtn.textContent = 'Rewriting…';
+  loadingEl.style.display = 'block';
+
+  try {
+    const res = await fetch('/api/rewrite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jd, history })
+    });
+    const data = await res.json();
+    if (!data.bullets) throw new Error('No bullets');
+
+    resultsEl.innerHTML = '<hr><div class="result-head">Resume-ready bullets</div>';
+    data.bullets.forEach(b => {
+      const div = document.createElement('div');
+      div.className = 'item';
+      div.innerHTML = `
+        <div class="skill-tag">${b.skill}</div>
+        <div class="raw">From: "${b.raw}"</div>
+        <div class="line">${b.line}</div>`;
+      resultsEl.appendChild(div);
+    });
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'copyall';
+    copyBtn.textContent = 'Copy all bullets';
+    copyBtn.onclick = () => {
+      navigator.clipboard.writeText(data.bullets.map(b => `• ${b.line}`).join('\n'));
+    };
+    resultsEl.appendChild(copyBtn);
+    resultsEl.style.display = 'block';
+  } catch (e) {
+    errorEl.textContent = 'Something went wrong. Try again.';
+    errorEl.style.display = 'block';
+  } finally {
+    loadingEl.style.display = 'none';
+    genBtn.disabled = false;
+    genBtn.textContent = 'Rewrite for this job';
+  }
+});
+</script>
+</body>
+</html>
