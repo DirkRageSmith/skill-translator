@@ -8,33 +8,32 @@ app.post('/api/rewrite', async (req, res) => {
   const { jd, history } = req.body;
   if (!jd || !history) return res.status(400).json({ error: 'Missing fields' });
 
-  const prompt = `You translate informal, lived work experience into resume bullet points, tuned to a specific job description.
-
-People often undersell what they did because they describe it the way they'd tell a friend, not the way a hiring manager reads it. Your job is to find the real, transferable skill underneath an informal description and restate it in language that matches the job description's vocabulary and priorities — without inventing accomplishments, numbers, or responsibilities the person didn't mention.
+  const prompt = `You translate informal work experience into resume bullet points tuned to a job description. Find the real transferable skill and restate it matching the job description vocabulary without inventing anything not mentioned.
 
 Rules:
-- Only use what's stated or directly implied in the work history. Never fabricate metrics, titles, team sizes, or outcomes.
-- Each bullet should map to something specific the person actually wrote.
-- Use active, concrete verbs. Avoid generic resume filler ("results-driven," "team player").
-- Where the job description uses specific terms, use matching language ONLY if the work history genuinely supports it.
-- Tag each bullet with the underlying skill it demonstrates, in 2-4 words.
+- Only use what is stated or directly implied. Never fabricate metrics, titles, or outcomes.
+- Use active concrete verbs. No filler like "results-driven" or "team player".
+- Match job description terms ONLY if the work history genuinely supports it.
+- Tag each bullet with the skill it demonstrates in 2-4 words.
 
-Return ONLY valid JSON, no markdown fences, no preamble, in this exact shape:
-{"bullets":[{"raw":"short paraphrase of the original line from work history","skill":"skill tag","line":"the rewritten resume bullet"}]}
+Return ONLY valid JSON in this exact shape, no markdown fences, no extra text:
+{"bullets":[{"raw":"paraphrase of original line","skill":"skill tag","line":"rewritten resume bullet"}]}
 
-Produce between 4 and 8 bullets, prioritizing the strongest matches to the job description first.
+Produce 4-8 bullets, strongest job description matches first.
 
 JOB DESCRIPTION:
 ${jd}
 
-WORK HISTORY (in the person's own words):
+WORK HISTORY:
 ${history}`;
 
   try {
     const apiKey = process.env.GEMINI_API_KEY;
+    console.log('API key present:', !!apiKey, 'length:', apiKey ? apiKey.length : 0);
+    
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
-    const response = await fetch(url, {
+    const geminiRes = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -43,16 +42,24 @@ ${history}`;
       })
     });
 
-    const data = await response.json();
+    const data = await geminiRes.json();
+    console.log('Gemini status:', geminiRes.status);
+    console.log('Gemini response:', JSON.stringify(data).slice(0, 500));
+
+    if (data.error) {
+      console.error('Gemini error:', data.error);
+      return res.status(500).json({ error: data.error.message });
+    }
+
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) return res.status(500).json({ error: 'No response from model' });
+    if (!text) return res.status(500).json({ error: 'No text in response' });
 
     const cleaned = text.replace(/```json|```/g, '').trim();
     const parsed = JSON.parse(cleaned);
     res.json(parsed);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Something went wrong' });
+    console.error('Server error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
